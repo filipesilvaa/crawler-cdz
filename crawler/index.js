@@ -3,7 +3,7 @@ module.exports = (request, cheerio, fs) => {
     let accessContentLiUrl = (element) => {
         return new Promise( (resolve, reject) => {
             request(element.href, (err, res, html) => {
-                if(err) throw err;
+                if(err) reject(err);
 
                 let $ = cheerio.load(html);
                 let src = $("#aba1-video1").get(0).children[1].children[3].children[1].attribs.src;
@@ -15,7 +15,9 @@ module.exports = (request, cheerio, fs) => {
                     let segmentLength = data.length;
                     uploadedSize += segmentLength;
                     let percent = (uploadedSize/videoSize*100).toFixed(2);
-                    process.stdout.write(`Downloading ${element.title}: ${percent}%\n`);
+                    if(percent % 10 === 0) {
+                        process.stdout.write(`Downloading ${element.title}: ${percent}%\n`);
+                    }
                     if(percent >= 100) {
                         resolve(`${element.title}.mp4 downloaded \n`);
                     };
@@ -25,8 +27,7 @@ module.exports = (request, cheerio, fs) => {
                     process.stdout.write("Starting to download the file.\n");
                 })
                 .on("error", (err) => {
-                    console.error(err);
-                    reject();
+                    reject(err);
                 })
                 .pipe(fs.createWriteStream(`./download/${element.title}.mp4`));
             });
@@ -36,14 +37,18 @@ module.exports = (request, cheerio, fs) => {
     let downloadvideos = async function (videos) {
         try {
             let element;
-            for (let video of videos) {
+            Promise.all(videos.map( async (video) => {
                 element = video.children[0].attribs;
-                let result = await accessContentLiUrl(video.children[0].attribs);
+                let result = await accessContentLiUrl(element);
                 process.stdout.write(result);
-            }
+            })).then( (result) => {
+                process.stdout.write("finish!");
+            });
         }
         catch (err) {
-            if(err.message.contains("ECONNRESET")){
+            if(err.code.contains("ETIMEDOUT")){
+                await accessContentLiUrl(element);
+            } else if(err.code.contains("ECONNRESET")){
                 await accessContentLiUrl(element);
             }
             console.error(err);
